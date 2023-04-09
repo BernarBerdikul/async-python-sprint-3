@@ -1,4 +1,9 @@
-# import asyncio
+import asyncio
+
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Server:

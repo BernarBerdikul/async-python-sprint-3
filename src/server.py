@@ -2,30 +2,29 @@ import asyncio
 import hashlib
 import json
 import re
-from typing import Any, Optional, Callable
+from typing import Any, Callable
 
 from src import settings
-from src.models import User, Chat, Message, RequestSchema
+from src.models import Chat, Message, RequestSchema, User
 
 
 class Server:
     def __init__(
         self,
-        host: str = settings.SERVER_HOST,
+        host: str | None = settings.SERVER_HOST,
         port: int = settings.SERVER_PORT,
         msg_batch_size: int = settings.MSG_BATCH_SIZE,
     ):
         """Init server"""
         self.host = host
         self.port = port
-        self.clients = []
         self.connected_users: dict[str, User] = {}
         self.chats: list[Chat] = [Chat(name="main")]
         self.status_code_map: dict[int, str] = {
-            200: '200 OK',
-            400: '400 Bad Request',
-            401: '401 Unauthorized',
-            404: '404 Not Found',
+            200: "200 OK",
+            400: "400 Bad Request",
+            401: "401 Unauthorized",
+            404: "404 Not Found",
         }
         self.endpoint_map = {
             "POST/connect/": self.connect,
@@ -36,7 +35,7 @@ class Server:
         }
         self.endpoint_params_regex_map = {
             "GET/messages/": {
-                "regex": r'/chats/([^/]+)/messages/',
+                "regex": r"/chats/([^/]+)/messages/",
                 "params": ["chat_name"],
             },
         }
@@ -46,38 +45,36 @@ class Server:
     async def send(self, request: RequestSchema) -> str:
         """Send message to main chat."""
         # Get user token
-        user_token: str = request.headers.get("token")
+        user_token: str = request.headers.get("token")  # type: ignore
         # Get user data
         if user_data := self.connected_users.get(user_token):
-            # Get message
-            message = request.data.get("message")
-            new_message: Message = Message(user=user_data, text=message)
             # Add new message in main chat
+            message = request.data.get("message")
             main_chat: Chat = await self._get_main_chat()
-            main_chat.messages.append(new_message)
+            main_chat.messages.append(Message(user=user_data, text=message))  # type: ignore
             # Prepare response
-            return await self._parse_response(200, {"message": new_message.text})
+            return await self._parse_response(200, {"message": message})
         # Return error
-        return await self._parse_response(401, {'error': 'User not found'})
+        return await self._parse_response(401, {"error": "User not found"})
 
     async def connect(self, request: RequestSchema) -> str:
         """Connect user to chat."""
         # Get user token
-        user_token: str = request.headers.get("token")
+        user_token: str = request.headers.get("token")  # type: ignore
         # Check if user already connected
         if not self.connected_users.get(user_token):
             user: User = User(**request.data)
-            user_token: str = await self.get_data_hash(user=user)
-            self.connected_users[user_token] = user
+            new_user_token: str = await self.get_data_hash(user=user)
+            self.connected_users[new_user_token] = user
             main_chat: Chat = await self._get_main_chat()
             main_chat.members.append(user)
         # Return user token
-        return await self._parse_response(200, {"token": user_token})
+        return await self._parse_response(200, {"token": user_token or new_user_token})
 
     async def status(self, request: RequestSchema) -> str:
         """Get chat statuses for user."""
         # Get user token
-        user_token: str = request.headers.get("token")
+        user_token: str = request.headers.get("token")  # type: ignore
         # Get user data
         if user_data := self.connected_users.get(user_token):
             # Prepare user's chats
@@ -89,43 +86,49 @@ class Server:
             # Prepare response
             return await self._parse_response(200, response_data)
         # Return error
-        return await self._parse_response(401, {'error': 'User not found'})
+        return await self._parse_response(401, {"error": "User not found"})
 
     async def messages(self, request: RequestSchema) -> str:
         """Get messages for user."""
         # Get chat name
-        chat_name: str = request.params.get("chat_name")
+        chat_name: str = request.params.get("chat_name")  # type: ignore
         # Get user token
-        user_token: str = request.headers.get("token")
+        user_token: str = request.headers.get("token")  # type: ignore
         # Get user data
         user_data = self.connected_users.get(user_token)
         # Get chat
         chat = await self._get_specific_chat(chat_name)
         # Get messages
-        if user_last_message := user_data.last_message:
+        if user_last_message := user_data.last_message:  # type: ignore
             messages = [
                 message
-                for number, message in enumerate(chat.messages)
-                if all((
-                    message.created_at > user_last_message.created_at,
-                    number < self.msg_batch_size,
-                ))
+                for number, message in enumerate(chat.messages)  # type: ignore
+                if all(
+                    (
+                        message.created_at > user_last_message.created_at,
+                        number < self.msg_batch_size,
+                    )
+                )
             ]
         else:
-            messages = chat.messages[:self.msg_batch_size]
+            messages = chat.messages[: self.msg_batch_size]  # type: ignore
         # Prepare response
-        messages = [
-            {
-                "user": message.user.login,
-                "text": message.text,
-                "created_at": message.created_at,
-            }
-            for message in messages
-        ]
-        return await self._parse_response(200, {"messages": messages})
+        response_data = {
+            "messages": [
+                {
+                    "user": message.user.login,
+                    "text": message.text,
+                    "created_at": message.created_at,
+                }
+                for message in messages
+            ]
+        }
+        return await self._parse_response(200, response_data)
 
-    async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        address = writer.get_extra_info('peername')
+    async def handle_request(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        address = writer.get_extra_info("peername")
         print("======================================")
         print(f"Start serving {address}")
 
@@ -135,11 +138,13 @@ class Server:
             # Get headers
             headers: dict[str, str] = await self._parse_headers(reader=reader)
             content_length: int = int(headers.get("Content-Length", 0))
-            user_token: Optional[str] = headers.get("Authorization", None)
+            user_token: str | None = headers.get("Authorization", None)
             # Check that content length is not None
             if method == "GET" or content_length:
                 # Call endpoint
-                body = await self._parse_request_body(reader=reader, content_length=content_length)
+                body = await self._parse_request_body(
+                    reader=reader, content_length=content_length
+                )
                 request: RequestSchema = RequestSchema(
                     headers={"token": user_token},
                     data=body,
@@ -148,10 +153,10 @@ class Server:
                 response: str = await target_endpoint(request)
             else:
                 # Raise bad request data
-                response = await self._parse_response(400, {'error': 'Invalid request'})
+                response = await self._parse_response(400, {"error": "Invalid request"})
         else:
             # Raise not found endpoint
-            response = await self._parse_response(404, {'error': 'Endpoint not found'})
+            response = await self._parse_response(404, {"error": "Endpoint not found"})
         # Send response
         print("============== RESPONSE ==============")
         print(f"Response: {response}")
@@ -173,7 +178,7 @@ class Server:
             print(f"Server started at {self.host}:{self.port}")
             await srv.serve_forever()
 
-    async def _get_specific_chat(self, chat_name: str) -> Optional[Chat]:
+    async def _get_specific_chat(self, chat_name: str) -> Chat | None:
         """Get specific chat."""
         chat = [chat for chat in self.chats if chat.name == chat_name]
         return chat[0] if chat else None
@@ -190,32 +195,40 @@ class Server:
         response += json.dumps(data)
         return response
 
-    async def _get_target_endpoint(self, reader: asyncio.StreamReader) -> tuple[str, Optional[Callable], dict]:
+    async def _get_target_endpoint(
+        self, reader: asyncio.StreamReader
+    ) -> tuple[str, Callable | None, dict]:
         """Get target endpoint from request line."""
         # Get request line
         request_line = await reader.readline()
-        method, path, protocol = request_line.decode().strip().split(' ')
+        method, path, protocol = request_line.decode().strip().split(" ")
         print(f"{method}: {self.host}:{self.port}{path}")
         # Get endpoint key
-        path_parts = path.split('/')
+        path_parts = path.split("/")
         endpoint_key = f"{method}/{path_parts[-2]}/"
         # Get params
-        params = await self._parse_params(path=path, endpoint_key=endpoint_key) if len(path_parts) > 2 else {}
+        params = (
+            await self._parse_params(path=path, endpoint_key=endpoint_key)
+            if len(path_parts) > 2
+            else {}
+        )
         # Return endpoint
         return method, self.endpoint_map.get(endpoint_key), params
 
     async def _parse_params(self, path: str, endpoint_key: str) -> dict[str, Any]:
         """Parse params from path."""
         if params_regex := self.endpoint_params_regex_map.get(endpoint_key):
-            match = re.match(params_regex.get('regex', ''), path)
+            match = re.match(params_regex.get("regex", ""), path)  # type: ignore
             return {
                 param_name: match.group(number)
-                for number, param_name in enumerate(params_regex.get('params'), start=1)
+                for number, param_name in enumerate(params_regex.get("params"), start=1)  # type: ignore
             }
         return {}
 
     @staticmethod
-    async def _parse_request_body(reader: asyncio.StreamReader, content_length: int) -> dict:
+    async def _parse_request_body(
+        reader: asyncio.StreamReader, content_length: int
+    ) -> dict:
         """Parse request body."""
         body = await reader.read(content_length)
         return json.loads(body.decode()) if body else {}
@@ -226,9 +239,9 @@ class Server:
         headers: dict[str, str] = {}
         while True:
             header = await reader.readline()
-            if header == b'\r\n':
+            if header == b"\r\n":
                 break
-            key, value = header.decode().strip().split(': ')
+            key, value = header.decode().strip().split(": ")
             headers[key] = value
         return headers
 
@@ -238,7 +251,7 @@ class Server:
         return hashlib.sha256(f"{user.login}{user.password}".encode()).hexdigest()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """Run server."""
     server = Server()
     asyncio.run(server.run())

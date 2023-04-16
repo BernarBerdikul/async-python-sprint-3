@@ -10,7 +10,7 @@ class Client:
     def __init__(
         self,
         user_data: dict[str, Any],
-        server_host: str = settings.SERVER_HOST,
+        server_host: str | None = settings.SERVER_HOST,
         server_port: int = settings.SERVER_PORT,
     ):
         """Init client"""
@@ -151,7 +151,7 @@ class Client:
         await asyncio.gather(self.command_listener())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     """Run client."""
     client = Client(
         user_data={

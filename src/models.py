@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from src import settings
+
 
 @dataclass
 class RequestSchema:
@@ -15,7 +17,9 @@ class RequestSchema:
 class User:
     login: str
     password: str
-    last_message: Optional["Message"] = None
+    last_chat_message_map: dict[str, Optional["Message"]] = field(
+        default_factory=lambda: {settings.MAIN_CHAT_NAME: None},  # type: ignore
+    )
 
 
 @dataclass

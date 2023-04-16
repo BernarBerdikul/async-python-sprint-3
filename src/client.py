@@ -7,6 +7,8 @@ from src import settings
 
 
 class Client:
+    """Client for chat server."""
+
     def __init__(
         self,
         user_data: dict[str, Any],

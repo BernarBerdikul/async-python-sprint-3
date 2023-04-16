@@ -19,7 +19,7 @@ class Server:
         self.host = host
         self.port = port
         self.connected_users: dict[str, User] = {}
-        self.chats: list[Chat] = [Chat(name="main")]
+        self.chats: list[Chat] = [Chat(name=settings.MAIN_CHAT_NAME)]  # type: ignore
         self.status_code_map: dict[int, str] = {
             200: "200 OK",
             400: "400 Bad Request",
@@ -29,7 +29,7 @@ class Server:
         self.endpoint_map = {
             "POST/connect/": self.connect,
             "POST/send/": self.send,
-            "POST/send_to/": self.send,
+            "POST/send_to/": self.send_to,
             "GET/status/": self.status,
             "GET/messages/": self.messages,
         }
@@ -42,16 +42,40 @@ class Server:
         # Message batch size
         self.msg_batch_size = msg_batch_size
 
+    async def send_to(self, request: RequestSchema) -> str:
+        """Send message to main chat."""
+        # Get user token
+        user_token: str = request.headers.get("token")  # type: ignore
+        # Get user data
+        if sender_user := self.connected_users.get(user_token):
+            users: list[User] = [
+                user
+                for user in self.connected_users.values()
+                if user.login == request.data.get("user_login")
+            ]
+            if not users:
+                return await self._parse_response(404, {"error": "User not found"})
+            # Get receiver user
+            receiver_user = users[0]
+            # Add new message in main chat
+            message = request.data.get("message")
+            chat = await self._get_or_create_chat(sender_user, receiver_user)
+            chat.messages.append(Message(user=sender_user, text=message))  # type: ignore
+            # Prepare response
+            return await self._parse_response(200, {"message": message})
+        # Return error
+        return await self._parse_response(401, {"error": "User not found"})
+
     async def send(self, request: RequestSchema) -> str:
         """Send message to main chat."""
         # Get user token
         user_token: str = request.headers.get("token")  # type: ignore
         # Get user data
-        if user_data := self.connected_users.get(user_token):
+        if sender_user := self.connected_users.get(user_token):
             # Add new message in main chat
             message = request.data.get("message")
             main_chat: Chat = await self._get_main_chat()
-            main_chat.messages.append(Message(user=user_data, text=message))  # type: ignore
+            main_chat.messages.append(Message(user=sender_user, text=message))  # type: ignore
             # Prepare response
             return await self._parse_response(200, {"message": message})
         # Return error
@@ -68,8 +92,9 @@ class Server:
             self.connected_users[new_user_token] = user
             main_chat: Chat = await self._get_main_chat()
             main_chat.members.append(user)
+            return await self._parse_response(200, {"token": new_user_token})
         # Return user token
-        return await self._parse_response(200, {"token": user_token or new_user_token})
+        return await self._parse_response(200, {"token": user_token})
 
     async def status(self, request: RequestSchema) -> str:
         """Get chat statuses for user."""
@@ -98,8 +123,10 @@ class Server:
         user_data = self.connected_users.get(user_token)
         # Get chat
         chat = await self._get_specific_chat(chat_name)
+        if not chat:
+            return await self._parse_response(404, {"error": "Chat not found"})
         # Get messages
-        if user_last_message := user_data.last_message:  # type: ignore
+        if user_last_message := user_data.last_chat_message_map[chat_name]:  # type: ignore
             messages = [
                 message
                 for number, message in enumerate(chat.messages)  # type: ignore
@@ -112,13 +139,16 @@ class Server:
             ]
         else:
             messages = chat.messages[: self.msg_batch_size]  # type: ignore
+            # Save last message
+            if messages:
+                user_data.last_chat_message_map[chat_name] = messages[-1]  # type: ignore
         # Prepare response
         response_data = {
             "messages": [
                 {
                     "user": message.user.login,
                     "text": message.text,
-                    "created_at": message.created_at,
+                    "created_at": message.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 }
                 for message in messages
             ]
@@ -128,6 +158,7 @@ class Server:
     async def handle_request(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
+        """Handle user's request."""
         address = writer.get_extra_info("peername")
         print("======================================")
         print(f"Start serving {address}")
@@ -169,6 +200,7 @@ class Server:
         writer.close()
 
     async def run(self):
+        """Run server."""
         srv = await asyncio.start_server(
             self.handle_request,
             host=self.host,
@@ -186,6 +218,27 @@ class Server:
     async def _get_main_chat(self) -> Chat:
         """Get main chat."""
         return self.chats[0]
+
+    async def _get_or_create_chat(self, sender_user: User, receiver_user: User) -> Chat:
+        """Get or create chat."""
+        members = [sender_user, receiver_user]
+        chat_name: str = "+".join(
+            [
+                member.login
+                for member in sorted(members, key=lambda member: member.login)
+            ]
+        )
+        chats: list[Chat] = [chat for chat in self.chats if chat.name == chat_name]
+        if chats:
+            # Return existing chat
+            return chats[0]
+        # Create new chat
+        new_chat = Chat(name=chat_name, members=members)
+        self.chats.append(new_chat)
+        # Save chat in last message map
+        sender_user.last_chat_message_map[chat_name] = None
+        receiver_user.last_chat_message_map[chat_name] = None
+        return new_chat
 
     async def _parse_response(self, code: int, data: dict[str, Any]) -> str:
         """Parse response data to string."""

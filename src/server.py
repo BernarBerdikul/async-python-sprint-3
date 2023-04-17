@@ -1,11 +1,12 @@
 import asyncio
 import hashlib
+import http
 import json
 import logging
 import re
 from typing import Any, Callable
 
-from src import settings
+from src.settings import settings
 from src.models import Chat, Message, RequestSchema, User
 
 logger = logging.getLogger(__name__)
@@ -24,10 +25,10 @@ class Server:
         self.connected_users: dict[str, User] = {}
         self.chats: list[Chat] = [Chat(name=settings.MAIN_CHAT_NAME)]  # type: ignore
         self.status_code_map: dict[int, str] = {
-            200: "200 OK",
-            400: "400 Bad Request",
-            401: "401 Unauthorized",
-            404: "404 Not Found",
+            http.HTTPStatus.OK: "200 OK",
+            http.HTTPStatus.BAD_REQUEST: "400 Bad Request",
+            http.HTTPStatus.UNAUTHORIZED: "401 Unauthorized",
+            http.HTTPStatus.NOT_FOUND: "404 Not Found",
         }
         self.endpoint_map = {
             "POST/connect/": self.connect,
@@ -57,7 +58,7 @@ class Server:
                 if user.login == request.data.get("user_login")
             ]
             if not users:
-                return await self._parse_response(404, {"error": "User not found"})
+                return await self._parse_response(http.HTTPStatus.NOT_FOUND, {"error": "User not found"})
             # Get receiver user
             receiver_user = users[0]
             # Add new message in main chat
@@ -65,9 +66,9 @@ class Server:
             chat = await self._get_or_create_chat(sender_user, receiver_user)
             chat.messages.append(Message(user=sender_user, text=message))  # type: ignore
             # Prepare response
-            return await self._parse_response(200, {"message": message})
+            return await self._parse_response(http.HTTPStatus.OK, {"message": message})
         # Return error
-        return await self._parse_response(401, {"error": "User not found"})
+        return await self._parse_response(http.HTTPStatus.UNAUTHORIZED, {"error": "User not found"})
 
     async def send(self, request: RequestSchema) -> str:
         """Send message to main chat."""
@@ -80,9 +81,9 @@ class Server:
             main_chat: Chat = await self._get_main_chat()
             main_chat.messages.append(Message(user=sender_user, text=message))  # type: ignore
             # Prepare response
-            return await self._parse_response(200, {"message": message})
+            return await self._parse_response(http.HTTPStatus.OK, {"message": message})
         # Return error
-        return await self._parse_response(401, {"error": "User not found"})
+        return await self._parse_response(http.HTTPStatus.UNAUTHORIZED, {"error": "User not found"})
 
     async def connect(self, request: RequestSchema) -> str:
         """Connect user to chat."""
@@ -95,9 +96,9 @@ class Server:
             self.connected_users[new_user_token] = user
             main_chat: Chat = await self._get_main_chat()
             main_chat.members.append(user)
-            return await self._parse_response(200, {"token": new_user_token})
+            return await self._parse_response(http.HTTPStatus.OK, {"token": new_user_token})
         # Return user token
-        return await self._parse_response(200, {"token": user_token})
+        return await self._parse_response(http.HTTPStatus.OK, {"token": user_token})
 
     async def status(self, request: RequestSchema) -> str:
         """Get chat statuses for user."""
@@ -112,9 +113,9 @@ class Server:
                 if user_data.login in member_logins:
                     response_data[chat.name] = member_logins
             # Prepare response
-            return await self._parse_response(200, response_data)
+            return await self._parse_response(http.HTTPStatus.OK, response_data)
         # Return error
-        return await self._parse_response(401, {"error": "User not found"})
+        return await self._parse_response(http.HTTPStatus.UNAUTHORIZED, {"error": "User not found"})
 
     async def messages(self, request: RequestSchema) -> str:
         """Get messages for user."""
@@ -127,7 +128,7 @@ class Server:
         # Get chat
         chat = await self._get_specific_chat(chat_name)
         if not chat:
-            return await self._parse_response(404, {"error": "Chat not found"})
+            return await self._parse_response(http.HTTPStatus.NOT_FOUND, {"error": "Chat not found"})
         # Get messages
         if user_last_message := user_data.last_chat_message_map[chat_name]:  # type: ignore
             messages = [
@@ -156,7 +157,7 @@ class Server:
                 for message in messages
             ]
         }
-        return await self._parse_response(200, response_data)
+        return await self._parse_response(http.HTTPStatus.OK, response_data)
 
     async def handle_request(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -187,10 +188,10 @@ class Server:
                 response: str = await target_endpoint(request)
             else:
                 # Raise bad request data
-                response = await self._parse_response(400, {"error": "Invalid request"})
+                response = await self._parse_response(http.HTTPStatus.BAD_REQUEST, {"error": "Invalid request"})
         else:
             # Raise not found endpoint
-            response = await self._parse_response(404, {"error": "Endpoint not found"})
+            response = await self._parse_response(http.HTTPStatus.NOT_FOUND, {"error": "Endpoint not found"})
         # Send response
         logger.info("============== RESPONSE ==============")
         logger.info(f"Response: {response}")

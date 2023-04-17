@@ -3,8 +3,10 @@ import logging
 from typing import Any
 
 from aiohttp import ClientSession
+from aiohttp.client_exceptions import ServerTimeoutError, ClientConnectorError
 
-from src import settings
+from src.settings import settings
+from src.enums import ClientCommandEnum
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,8 @@ class Client:
                 ) as response:
                     data = await response.json()
                     logger.info(f"Request [{response.status}]: {data}")
-        except Exception as e:
-            logger.error(e)
+        except (ServerTimeoutError, ClientConnectorError) as e:
+            logger.exception(e)
 
     async def send_to(self, login: str, message: str) -> None:
         """Send message to specific user."""
@@ -70,8 +72,8 @@ class Client:
                 ) as response:
                     data = await response.json()
                     logger.info(f"Request [{response.status}]: {data}")
-        except Exception as e:
-            logger.error(e)
+        except (ServerTimeoutError, ClientConnectorError) as e:
+            logger.exception(e)
 
     async def status(self) -> None:
         """Get chat status."""
@@ -84,8 +86,8 @@ class Client:
                 ) as response:
                     data = await response.json()
                     logger.info(f"Request [{response.status}]: {data}")
-        except Exception as e:
-            logger.error(e)
+        except (ServerTimeoutError, ClientConnectorError) as e:
+            logger.exception(e)
 
     async def messages(self, chat_name: str) -> None:
         """Get messages from chat."""
@@ -98,8 +100,8 @@ class Client:
                 ) as response:
                     data = await response.json()
                     logger.info(f"Request [{response.status}]: {data}")
-        except Exception as e:
-            logger.error(e)
+        except (ServerTimeoutError, ClientConnectorError) as e:
+            logger.exception(e)
 
     async def connect(self) -> None:
         """Connect to server"""
@@ -117,53 +119,52 @@ class Client:
                     logger.info(f"Request [{response.status}]: {data}")
                     # Save token
                     self.user_token = data.get("token")
-        except Exception as e:
+        except (ServerTimeoutError, ClientConnectorError) as e:
             self.is_session_active = False
-            logger.error(e)
+            logger.exception(e)
         logger.info("Connected to server")
 
     async def command_listener(self) -> None:
         """Listen for user commands"""
-        logger.info(
-            "Listening for CLI commands... (send, send_to, status, messages, close)"
-        )
+        allowed_commands = ", ".join(ClientCommandEnum.get_cli_commands())
+        logger.info(f"Listening for CLI commands... ({allowed_commands})")
         while self.is_session_active:
-            try:
-                command = input("Enter command: ")
-                if command == "send":
-                    # Endpoint: /send/
-                    message = input("Enter message: ")
-                    await self.send(message=message)
-                if command == "send_to":
-                    # Endpoint: /send_to/
-                    login = input("Enter login: ")
-                    message = input("Enter message: ")
-                    await self.send_to(login=login, message=message)
-                elif command == "status":
-                    # Endpoint: /status/
-                    await self.status()
-                elif command == "messages":
-                    # Endpoint: /chats/{chat_name}/messages/
-                    chat_name = input("Enter chat's name: ")
-                    await self.messages(chat_name=chat_name)
-                elif command == "close":
-                    self.is_session_active = False
-            except Exception as e:
-                logger.error(e)
+            command = input("Enter command: ")
+            if command == ClientCommandEnum.SEND.value:
+                # Endpoint: /send/
+                message = input("Enter message: ")
+                await self.send(message=message)
+            if command == ClientCommandEnum.SEND_TO.value:
+                # Endpoint: /send_to/
+                login = input("Enter login: ")
+                message = input("Enter message: ")
+                await self.send_to(login=login, message=message)
+            elif command == ClientCommandEnum.STATUS.value:
+                # Endpoint: /status/
+                await self.status()
+            elif command == ClientCommandEnum.MESSAGES.value:
+                # Endpoint: /chats/{chat_name}/messages/
+                chat_name = input("Enter chat's name: ")
+                await self.messages(chat_name=chat_name)
+            elif command == ClientCommandEnum.CLOSE.value:
+                self.is_session_active = False
         logger.info("Stopped listening for CLI commands...")
 
     async def run(self):
         """Run client"""
         await self.connect()
+        # listen CLI commands
         await asyncio.gather(self.command_listener())
 
 
 if __name__ == "__main__":
     """Run client."""
+    login = input("Enter user's login: ")
+    password = input("Enter user's password: ")
     client = Client(
         user_data={
-            "login": "user_1",
-            "password": "123456",
+            "login": login,
+            "password": password,
         },
     )
     asyncio.run(client.run())

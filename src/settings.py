@@ -1,11 +1,16 @@
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
+from pydantic import BaseSettings, Field
 
 
-SERVER_HOST = os.getenv("SERVER_HOST")
-SERVER_PORT = int(os.getenv("SERVER_PORT"))  # type: ignore
-MSG_BATCH_SIZE = int(os.getenv("MSG_BATCH_SIZE"))  # type: ignore
-MAIN_CHAT_NAME = os.getenv("MAIN_CHAT_NAME")
+class AppSettings(BaseSettings):
+    """Application settings."""
+
+    SERVER_HOST: str = Field(default="localhost")
+    SERVER_PORT: int = Field(default=8000)
+    MSG_BATCH_SIZE: int = Field(default=20)
+    MAIN_CHAT_NAME: str = Field(default="main")
+
+    class Config:
+        env_file = "../.env"
+
+
+settings = AppSettings()

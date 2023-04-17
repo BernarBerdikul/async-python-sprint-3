@@ -1,9 +1,12 @@
 import asyncio
+import logging
 from typing import Any
 
 from aiohttp import ClientSession
 
 from src import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Client:
@@ -47,9 +50,9 @@ class Client:
                     headers=self.headers,
                 ) as response:
                     data = await response.json()
-                    print(f"Request [{response.status}]: {data}")
+                    logger.info(f"Request [{response.status}]: {data}")
         except Exception as e:
-            print(e)
+            logger.error(e)
 
     async def send_to(self, login: str, message: str) -> None:
         """Send message to specific user."""
@@ -66,9 +69,9 @@ class Client:
                     headers=self.headers,
                 ) as response:
                     data = await response.json()
-                    print(f"Request [{response.status}]: {data}")
+                    logger.info(f"Request [{response.status}]: {data}")
         except Exception as e:
-            print(e)
+            logger.error(e)
 
     async def status(self) -> None:
         """Get chat status."""
@@ -80,9 +83,9 @@ class Client:
                     headers=self.headers,
                 ) as response:
                     data = await response.json()
-                    print(f"Request [{response.status}]: {data}")
+                    logger.info(f"Request [{response.status}]: {data}")
         except Exception as e:
-            print(e)
+            logger.error(e)
 
     async def messages(self, chat_name: str) -> None:
         """Get messages from chat."""
@@ -94,15 +97,15 @@ class Client:
                     headers=self.headers,
                 ) as response:
                     data = await response.json()
-                    print(f"Request [{response.status}]: {data}")
+                    logger.info(f"Request [{response.status}]: {data}")
         except Exception as e:
-            print(e)
+            logger.error(e)
 
     async def connect(self) -> None:
         """Connect to server"""
         endpoint = f"{self.server_path}/connect/"
         self.is_session_active = True
-        print("Connecting to server...")
+        logger.info("Connecting to server...")
         try:
             async with ClientSession() as session:
                 async with session.post(
@@ -111,17 +114,19 @@ class Client:
                     headers=self.headers,
                 ) as response:
                     data = await response.json()
-                    print(f"Request [{response.status}]: {data}")
+                    logger.info(f"Request [{response.status}]: {data}")
                     # Save token
                     self.user_token = data.get("token")
         except Exception as e:
             self.is_session_active = False
-            print(e)
-        print("Connected to server")
+            logger.error(e)
+        logger.info("Connected to server")
 
     async def command_listener(self) -> None:
         """Listen for user commands"""
-        print("Listening for CLI commands... (send, send_to, status, messages, close)")
+        logger.info(
+            "Listening for CLI commands... (send, send_to, status, messages, close)"
+        )
         while self.is_session_active:
             try:
                 command = input("Enter command: ")
@@ -144,8 +149,8 @@ class Client:
                 elif command == "close":
                     self.is_session_active = False
             except Exception as e:
-                print(e)
-        print("Stopped listening for CLI commands...")
+                logger.error(e)
+        logger.info("Stopped listening for CLI commands...")
 
     async def run(self):
         """Run client"""

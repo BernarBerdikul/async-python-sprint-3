@@ -1,11 +1,14 @@
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Callable
 
 from src import settings
 from src.models import Chat, Message, RequestSchema, User
+
+logger = logging.getLogger(__name__)
 
 
 class Server:
@@ -160,8 +163,8 @@ class Server:
     ):
         """Handle user's request."""
         address = writer.get_extra_info("peername")
-        print("======================================")
-        print(f"Start serving {address}")
+        logger.info("======================================")
+        logger.info(f"Start serving {address}")
 
         # Get endpoint
         method, target_endpoint, params = await self._get_target_endpoint(reader=reader)
@@ -189,14 +192,14 @@ class Server:
             # Raise not found endpoint
             response = await self._parse_response(404, {"error": "Endpoint not found"})
         # Send response
-        print("============== RESPONSE ==============")
-        print(f"Response: {response}")
-        print("======================================")
+        logger.info("============== RESPONSE ==============")
+        logger.info(f"Response: {response}")
+        logger.info("======================================")
         writer.write(response.encode())
         await writer.drain()
         # Close connection
-        print(f"Stop serving {address}")
-        print("======================================")
+        logger.info(f"Stop serving {address}")
+        logger.info("======================================")
         writer.close()
 
     async def run(self):
@@ -207,7 +210,7 @@ class Server:
             port=self.port,
         )
         async with srv:
-            print(f"Server started at {self.host}:{self.port}")
+            logger.info(f"Server started at {self.host}:{self.port}")
             await srv.serve_forever()
 
     async def _get_specific_chat(self, chat_name: str) -> Chat | None:
@@ -255,7 +258,7 @@ class Server:
         # Get request line
         request_line = await reader.readline()
         method, path, protocol = request_line.decode().strip().split(" ")
-        print(f"{method}: {self.host}:{self.port}{path}")
+        logger.info(f"{method}: {self.host}:{self.port}{path}")
         # Get endpoint key
         path_parts = path.split("/")
         endpoint_key = f"{method}/{path_parts[-2]}/"

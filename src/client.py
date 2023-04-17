@@ -3,10 +3,10 @@ import logging
 from typing import Any
 
 from aiohttp import ClientSession
-from aiohttp.client_exceptions import ServerTimeoutError, ClientConnectorError
+from aiohttp.client_exceptions import ClientConnectorError, ServerTimeoutError
 
-from src.settings import settings
 from src.enums import ClientCommandEnum
+from src.settings import settings
 
 logger = logging.getLogger(__name__)
 
